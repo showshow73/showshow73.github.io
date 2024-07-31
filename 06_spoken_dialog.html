@@ -49,7 +49,7 @@ button:hover {
 </head>
 <body>
 
-<h1>課題：音声対話</h1>
+<h1>高校生のための学習支援</h1>
 
 <p1>対話を開始するときは、スタートボタンを押してください</p1>
 
@@ -67,18 +67,9 @@ button:hover {
 <script>
 // 応答の定義（ハッシュ）    
 var response = {
-    ".*あなた.*誰.*": "わたしはアレクサではありません",
-    ".*名前は.*": "内緒です",
-    ".*何歳.*": "え、わたし、何歳にみえますか",
-    ".*元気.*": "元気ですよー",
-    ".*好きな.*色.*": "オレンジです",
-    ".*夢は.*": "世界を冒険することです",
-    ".*好きな.*スポーツ.*": "けん玉です",
-    ".*好きな.*食べ物.*": "焼肉です",
-    ".*和歌山.*天気.*": "和歌山の天気はたぶん晴れでしょう",
-    ".*大阪.*天気.*": "大阪の天気は雨です。",
-    ".*明日.*天気.*": "明日の天気は曇りだと思います",
-    ".*明日.*和歌山.*天気.*": "明日の和歌山の天気はずばり雪です"
+    ".*数学.*公式.*": ["数学の公式に関するページを表示します", "https://w3e.kanazawa-it.ac.jp/math/kousiki/henkan-tex.cgi?target=/math/kousiki/index.html"],
+    ".*化学.*公式.*": ["化学の公式に関するページを表示します", "https://rikeilabo.com/category/formula-of-chemistry"],
+	".*英語.*文法.*": ["英文法に関するページを表示します", "https://e-grammar.info/sitemap.html#menu11"]
 };
 
 // この中身を書いてください。
@@ -114,14 +105,16 @@ asr.onresult = function(event){
     let output_not_final = '';
     if (event.results[event.resultIndex].isFinal) { // 結果が確定（Final）のとき
 	    asr.abort(); // 音声認識を停止
-        
-		let answer;
+
+        let answer;
+        let webpage;
         
         let keys = Object.keys(response);
         keys.forEach(function(key) {
             if(new RegExp(key).test(transcript)){ // 正規表現をtestしてtrue or false
-		        answer = response[key];
-                console.log(key + " : " + answer);
+		        answer = response[key][0];
+                webpage = response[key][1];
+                console.log(key + " : " + answer + " : " + webpage);
             }
         });
 		
@@ -134,7 +127,10 @@ asr.onresult = function(event){
 	    tts.text = answer;
 	    // 再生が終了（end）ときのイベントハンドラ（終了したときに実行される）
 	    tts.onend = function(event){
-			asr.start(); // 音声認識を再開
+            if(typeof webpage != 'undefined'){
+                location.href = webpage; // ページを移動
+            }   
+            asr.start(); // 音声認識を再開 
 	    }
 
 	    speechSynthesis.speak(tts); // 再生
