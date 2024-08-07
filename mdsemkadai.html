@@ -1,10 +1,9 @@
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="content-script-type" content="text/javascript">
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<meta http-equiv="Content-Style-Type" content="text/css">
-<meta http-equiv="Content-Script-Type" content="text/javascript">
-<title>天気予報アプリ</title>
+<title>音声対話型天気予報アプリ</title>
 <style>
 body {
     font-family: Arial, sans-serif;
@@ -44,27 +43,27 @@ button:hover {
 #resultOutput span {
     color: #ddd;
 }
-
 </style>
 </head>
 <body>
 
-<h1>天気予報アプリ</h1>
+<h1>一時間以内天気予報アプリ</h1>
 
-<p>座標を音声で入力して、天気情報を取得します。</p>
+<p>天気予報を知りたい場所を話してください</p>
+<p>10分間隔で一時間後までの降水量を予測します</p>
+<p>それ以降の天気を知りたい場合は「詳しく」と話してください。より詳細なwebページへ遷移します。</p>
 
 <p>
-<button id="startButton">開始</button>
-<button id="stopButton">停止</button>
+<button id="startButton">start</button>
+<button id="stopButton">stop</button>
 </p>
 
-<p>
+<p>結果:</p>
 <div id="resultOutput"></div>
-</p>
 
 <script>
-// Yahoo! JAPAN 気象情報APIのアプリケーションID
-var appid = 'hogehoge';
+// 応答の定義（ハッシュ）    
+var appid = 'dj00aiZpPW1xTWdzNkJ1Z1JRWCZzPWNvbnN1bWVyc2VjcmV0Jng9MTE-';  // あなたのYahoo! JAPAN APIのアプリケーションIDを入力してください
 
 const startButton = document.querySelector('#startButton'); // 開始ボタン
 const stopButton = document.querySelector('#stopButton'); // 停止ボタン
@@ -74,7 +73,7 @@ if (!'SpeechSynthesisUtterance' in window) {
     alert("あなたのブラウザはSpeech Synthesis APIに未対応です。");
 }
 const tts = new SpeechSynthesisUtterance(); // TTSインスタンスを生成
-tts.lang = "ja-JP"; // 言語(日本語)、英語の場合はen-US
+tts.lang = "ja-JP"; // 言語(日本語)
 tts.rate = 1.5; // 速度
 tts.pitch = 2.0; // 声の高さ
 tts.volume = 1.0; // 音量
@@ -92,72 +91,107 @@ asr.continuous = true; // 継続入力をオン
 let output = ''; // 出力
 
 asr.onresult = function(event){
-    let transcript = event.results[event.resultIndex][0].transcript; // 結果文字列
+    let transcript = event.results[event.resultIndex][0].transcript.trim(); // 結果文字列
 
-    let output_not_final = '';
-    if (event.results[event.resultIndex].isFinal) { // 結果が確定（Final）のとき
-	    asr.abort(); // 音声認識を停止
+    if (transcript.match(/より詳しく|詳しく|詳しく教えて/)) {
+        // 「より詳しく」「詳しく」「詳しく教えて」などにマッチした場合
+        window.location.href = "https://weather.yahoo.co.jp/weather/";
+    } else {
+        let output_not_final = '';
+        if (event.results[event.resultIndex].isFinal) { // 結果が確定（Final）のとき
+            asr.abort(); // 音声認識を停止
 
-        output += "入力座標: " + transcript + "<br>";
-        showWeather(transcript); // 天気情報を取得
-
-    } else { // 結果がまだ未確定のとき
-        output_not_final = '<span style="color:#ddd;">' + transcript + '</span>';
+            getCoordinates(transcript).then(coordinates => {
+                getWeather(coordinates).then(weather => {
+                    let answer = `${transcript}の天気情報です。<br>`;
+                    weather.forEach(info => {
+                        answer += `${info.date}、降水量は${info.rainfall}ミリです。<br>`;
+                    });
+                    
+                    output += transcript + ' => ' + answer + '<br>';
+                    
+                    tts.text = answer;
+                    tts.onend = function(event){
+                        if (!asr.stopped) { // ストップボタンが押されていない場合
+                            asr.start(); // 音声認識を再開 
+                        }
+                    }
+                    speechSynthesis.speak(tts); // 再生
+                    resultOutput.innerHTML = output;
+                });
+            });
+        } else { // 結果がまだ未確定のとき
+            output_not_final = '<span style="color:#ddd;">' + transcript + '</span>';
+        }
+        resultOutput.innerHTML = output + output_not_final;
     }
-    resultOutput.innerHTML = output + output_not_final;
 }
 
 // 開始ボタンのイベントハンドラ
 startButton.addEventListener('click', function() {
+    asr.stopped = false;
     asr.start();
 })
 
 // 停止ボタンのイベントハンドラ
 stopButton.addEventListener('click', function() {
-	asr.abort();
+    asr.stopped = true;
+    asr.abort();
     asr.stop();
+    speechSynthesis.cancel(); // 音声再生を停止
 })
 
-// 天気情報を取得する関数
-function showWeather(query) {
-    var url = "https://map.yahooapis.jp/weather/V1/place?appid=" + appid + "&coordinates=" + encodeURI(query) + "&output=json&callback=showResult";
-    callJSONP(url);
+// ジオコーダAPIを使って地名から座標を取得する関数
+function getCoordinates(query) {
+    return new Promise((resolve, reject) => {
+        var url = "https://map.yahooapis.jp/geocode/V1/geoCoder?appid=" + appid + "&query=" + encodeURI(query) + "&output=json&callback=callback";
+        callJSONP(url, (result) => {
+            if (result.Feature && result.Feature.length > 0) {
+                let coordinates = result.Feature[0].Geometry.Coordinates.split(',');
+                resolve(coordinates);
+            } else {
+                reject("座標が見つかりませんでした");
+            }
+        });
+    });
+}
+
+// 天気情報APIを使って天気情報を取得する関数
+function getWeather(coordinates) {
+    return new Promise((resolve, reject) => {
+        var url = "https://map.yahooapis.jp/weather/V1/place?appid=" + appid + "&coordinates=" + coordinates.join(',') + "&output=json&callback=callback";
+        callJSONP(url, (result) => {
+            if (result.Feature && result.Feature.length > 0) {
+                let weatherList = result.Feature[0].Property.WeatherList.Weather;
+                let weatherInfo = weatherList.map(weather => ({
+                    date: formatDate(weather.Date),
+                    rainfall: weather.Rainfall
+                }));
+                resolve(weatherInfo);
+            } else {
+                reject("天気情報が見つかりませんでした");
+            }
+        });
+    });
 }
 
 // JSONPを実行する関数
-function callJSONP(url) {
-    console.log(url);
+function callJSONP(url, callback) {
     var target = document.createElement('script');
     target.charset = 'utf-8';
     target.src = url;
+    window.callback = callback;
     document.body.appendChild(target);
 }
 
-// JSONPの結果として実行される関数
-function showResult(result) {
-    let output = '';
-
-    console.log(result);
-
-    if(result.ResultInfo.Count > 0){
-        let name = result.Feature[0].Name;
-        console.log(name);
-        output += "<h2>" + name + "</h2>";
-
-        for(let i=0; i < result.Feature[0].Property.WeatherList.Weather.length; i++){
-            let weather_type = result.Feature[0].Property.WeatherList.Weather[i].Type;
-            let weather_date = result.Feature[0].Property.WeatherList.Weather[i].Date;
-            let weather_rainfall = result.Feature[0].Property.WeatherList.Weather[i].Rainfall;
-            output += weather_type + "/" + weather_date + "/" + weather_rainfall + "<br>";
-        }
-
-        tts.text = "天気情報を取得しました。";
-    } else {
-        output = "not found";
-        tts.text = "天気情報が見つかりませんでした。";
-    }
-    resultOutput.innerHTML = output;
-    speechSynthesis.speak(tts); // 再生
+// 日時のフォーマットを変換する関数
+function formatDate(dateString) {
+    const year = dateString.substring(0, 4);
+    const month = dateString.substring(4, 6);
+    const day = dateString.substring(6, 8);
+    const hour = dateString.substring(8, 10);
+    const minute = dateString.substring(10, 12);
+    return `${year}年${month}月${day}日${hour}時${minute}分`;
 }
 
 </script>
