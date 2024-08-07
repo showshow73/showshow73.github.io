@@ -1,0 +1,170 @@
+<html lang="ja">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Content-Style-Type" content="text/css">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<title>天気予報アプリ</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    padding: 0;
+    text-align: center; 
+}
+
+h1 {
+    text-align: center;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 16px;
+    margin: 10px;
+    cursor: pointer;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+}
+
+button:hover {
+    background-color: #45a049;
+}
+
+#resultOutput {
+    margin-top: 20px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    min-height: 100px;
+    font-size: 16px;
+}
+
+#resultOutput span {
+    color: #ddd;
+}
+
+</style>
+</head>
+<body>
+
+<h1>天気予報アプリ</h1>
+
+<p>座標を音声で入力して、天気情報を取得します。</p>
+
+<p>
+<button id="startButton">開始</button>
+<button id="stopButton">停止</button>
+</p>
+
+<p>
+<div id="resultOutput"></div>
+</p>
+
+<script>
+// Yahoo! JAPAN 気象情報APIのアプリケーションID
+var appid = 'hogehoge';
+
+const startButton = document.querySelector('#startButton'); // 開始ボタン
+const stopButton = document.querySelector('#stopButton'); // 停止ボタン
+const resultOutput = document.querySelector('#resultOutput'); // 結果出力エリア
+
+if (!'SpeechSynthesisUtterance' in window) {
+    alert("あなたのブラウザはSpeech Synthesis APIに未対応です。");
+}
+const tts = new SpeechSynthesisUtterance(); // TTSインスタンスを生成
+tts.lang = "ja-JP"; // 言語(日本語)、英語の場合はen-US
+tts.rate = 1.5; // 速度
+tts.pitch = 2.0; // 声の高さ
+tts.volume = 1.0; // 音量
+
+SpeechRecognition = webkitSpeechRecognition || SpeechRecognition;
+if (!'SpeechRecognition' in window) {
+    alert("あなたのブラウザはSpeech Recognition APIに未対応です。");
+}
+
+const asr = new SpeechRecognition(); // ASRインスタンスを生成
+asr.lang = "ja-JP"; // 言語（日本語）
+asr.interimResults = true; // 途中結果出力をオン
+asr.continuous = true; // 継続入力をオン
+
+let output = ''; // 出力
+
+asr.onresult = function(event){
+    let transcript = event.results[event.resultIndex][0].transcript; // 結果文字列
+
+    let output_not_final = '';
+    if (event.results[event.resultIndex].isFinal) { // 結果が確定（Final）のとき
+	    asr.abort(); // 音声認識を停止
+
+        output += "入力座標: " + transcript + "<br>";
+        showWeather(transcript); // 天気情報を取得
+
+    } else { // 結果がまだ未確定のとき
+        output_not_final = '<span style="color:#ddd;">' + transcript + '</span>';
+    }
+    resultOutput.innerHTML = output + output_not_final;
+}
+
+// 開始ボタンのイベントハンドラ
+startButton.addEventListener('click', function() {
+    asr.start();
+})
+
+// 停止ボタンのイベントハンドラ
+stopButton.addEventListener('click', function() {
+	asr.abort();
+    asr.stop();
+})
+
+// 天気情報を取得する関数
+function showWeather(query) {
+    var url = "https://map.yahooapis.jp/weather/V1/place?appid=" + appid + "&coordinates=" + encodeURI(query) + "&output=json&callback=showResult";
+    callJSONP(url);
+}
+
+// JSONPを実行する関数
+function callJSONP(url) {
+    console.log(url);
+    var target = document.createElement('script');
+    target.charset = 'utf-8';
+    target.src = url;
+    document.body.appendChild(target);
+}
+
+// JSONPの結果として実行される関数
+function showResult(result) {
+    let output = '';
+
+    console.log(result);
+
+    if(result.ResultInfo.Count > 0){
+        let name = result.Feature[0].Name;
+        console.log(name);
+        output += "<h2>" + name + "</h2>";
+
+        for(let i=0; i < result.Feature[0].Property.WeatherList.Weather.length; i++){
+            let weather_type = result.Feature[0].Property.WeatherList.Weather[i].Type;
+            let weather_date = result.Feature[0].Property.WeatherList.Weather[i].Date;
+            let weather_rainfall = result.Feature[0].Property.WeatherList.Weather[i].Rainfall;
+            output += weather_type + "/" + weather_date + "/" + weather_rainfall + "<br>";
+        }
+
+        tts.text = "天気情報を取得しました。";
+    } else {
+        output = "not found";
+        tts.text = "天気情報が見つかりませんでした。";
+    }
+    resultOutput.innerHTML = output;
+    speechSynthesis.speak(tts); // 再生
+}
+
+</script>
+
+<!-- Yahoo!JAPANのAPIを利用したときはクレジット表記が必要 -->
+<p>
+Web Services by Yahoo! JAPAN （https://developer.yahoo.co.jp/sitemap/）
+</p>
+</body>
+</html>
