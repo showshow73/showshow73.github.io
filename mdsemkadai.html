@@ -7,13 +7,22 @@
 <style>
 body {
     font-family: Arial, sans-serif;
-    margin: 20px;
-    padding: 0;
-    text-align: center; 
+    margin: 0;
+    padding: 20px;
+    background: linear-gradient(135deg, #ece9e6, #ffffff);
+    text-align: center;
 }
 
 h1 {
-    text-align: center;
+    font-size: 2em;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+p {
+    font-size: 1.2em;
+    color: #555;
+    margin: 10px 0;
 }
 
 button {
@@ -25,23 +34,47 @@ button {
     color: white;
     border: none;
     border-radius: 5px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease, transform 0.3s ease;
 }
 
 button:hover {
     background-color: #45a049;
+    transform: translateY(-2px);
 }
 
 #resultOutput {
     margin-top: 20px;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    min-height: 100px;
-    font-size: 16px;
+    padding: 20px;
+    border-radius: 10px;
+    background-color: #f7f7f7;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-size: 1.1em;
+    color: #333;
+    line-height: 1.6em;
+    min-height: 150px;
 }
 
 #resultOutput span {
-    color: #ddd;
+    color: #aaa;
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 10px;
+    }
+    
+    h1 {
+        font-size: 1.5em;
+    }
+    
+    p, button {
+        font-size: 1em;
+    }
+
+    #resultOutput {
+        font-size: 1em;
+    }
 }
 </style>
 </head>
@@ -90,7 +123,7 @@ asr.continuous = true; // 継続入力をオン
 
 let output = ''; // 出力
 
-asr.onresult = function(event){
+asr.onresult = function(event) {
     let transcript = event.results[event.resultIndex][0].transcript.trim(); // 結果文字列
 
     if (transcript.match(/より詳しく|詳しく|詳しく教えて/)) {
@@ -103,11 +136,16 @@ asr.onresult = function(event){
 
             getCoordinates(transcript).then(coordinates => {
                 getWeather(coordinates).then(weather => {
-                    let answer = `${transcript}の天気情報です。<br>`;
-                    weather.forEach(info => {
-                        answer += `${info.date}、降水量は${info.rainfall}ミリです。<br>`;
-                    });
-                    
+                    let answer = '';
+                    if (typeof weather === "string") {
+                        answer = weather; // "一時間以内に雨が降ることはありません"
+                    } else {
+                        answer = `${transcript}の天気情報です。<br>`;
+                        weather.forEach(info => {
+                            answer += `${info.timeAfter}、降水量は${info.rainfall}ミリです。<br>`;
+                        });
+                    }
+
                     output += transcript + ' => ' + answer + '<br>';
                     
                     tts.text = answer;
@@ -126,6 +164,7 @@ asr.onresult = function(event){
         resultOutput.innerHTML = output + output_not_final;
     }
 }
+
 
 // 開始ボタンのイベントハンドラ
 startButton.addEventListener('click', function() {
@@ -163,11 +202,24 @@ function getWeather(coordinates) {
         callJSONP(url, (result) => {
             if (result.Feature && result.Feature.length > 0) {
                 let weatherList = result.Feature[0].Property.WeatherList.Weather;
-                let weatherInfo = weatherList.map(weather => ({
-                    date: formatDate(weather.Date),
-                    rainfall: weather.Rainfall
-                }));
-                resolve(weatherInfo);
+
+                // forecastのみを取得するフィルタリング
+                let forecastWeatherList = weatherList.filter(weather => weather.Type === 'forecast');
+
+                // 10分ごとの降水量が0ミリでないすべての情報を取得
+                let weatherInfo = forecastWeatherList
+                    .map((weather, index) => ({
+                        timeAfter: `${(index + 1) * 10}分後`,
+                        rainfall: weather.Rainfall
+                    }))
+                    .filter(weather => weather.rainfall > 0); // 0ミリでないものだけをフィルタリング
+
+                // 降水量が0ミリでない情報が存在しない場合
+                if (weatherInfo.length === 0) {
+                    resolve("一時間以内に雨が降ることはありません");
+                } else {
+                    resolve(weatherInfo);
+                }
             } else {
                 reject("天気情報が見つかりませんでした");
             }
